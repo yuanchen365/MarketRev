@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Output artifacts
+out/
+out_*/
+*.log
+
+# IDE / editors
+.idea/
+.vscode/
+
+# Misc
+.DS_Store
+Thumbs.db
+.env
+*.orig
