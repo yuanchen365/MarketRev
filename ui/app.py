@@ -179,17 +179,32 @@ else:
     st.sidebar.header("設定")
     exclude_finance = st.sidebar.checkbox("排除金融保險業", value=True)
     
-    if st.sidebar.button("更新資料"):
-        with st.spinner("正在更新資料，請稍候..."):
-            from scripts import generate_ssot_data
-            generate_ssot_data.main()
-            st.cache_data.clear()
-            st.success("資料已更新！")
-            # Compatible rerun
-            if hasattr(st, 'rerun'):
-                st.rerun()
-            else:
-                st.experimental_rerun()
+    st.sidebar.markdown("### 資料更新管理")
+    admin_password = st.sidebar.text_input("輸入管理員密碼解鎖更新功能", type="password")
+    
+    # Get password from secrets or default to 'admin' for local testing if not set
+    # In Cloud, user MUST set ADMIN_PASSWORD in secrets
+    try:
+        correct_password = st.secrets["ADMIN_PASSWORD"]
+    except (FileNotFoundError, KeyError, AttributeError):
+        correct_password = "admin" # Fallback for local dev
+        
+    if admin_password == correct_password:
+        if st.sidebar.button("更新資料"):
+            with st.spinner("正在更新資料，請稍候..."):
+                from scripts import generate_ssot_data
+                generate_ssot_data.main()
+                st.cache_data.clear()
+                st.success("資料已更新！")
+                # Compatible rerun
+                if hasattr(st, 'rerun'):
+                    st.rerun()
+                else:
+                    st.experimental_rerun()
+    elif admin_password:
+        st.sidebar.error("密碼錯誤")
+    else:
+        st.sidebar.info("請輸入密碼以啟用更新按鈕")
     
     if exclude_finance:
         df_market = market_ex
