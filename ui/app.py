@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import sys
@@ -9,6 +8,14 @@ import plotly.graph_objects as go
 # Add root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# Import the new tab function
+try:
+    from ui.revenue_breadth import render_breadth_tab
+except ImportError:
+    # Fallback if file not found during dev
+    def render_breadth_tab():
+        st.error("Revenue Breadth module not found.")
 
 OUTPUT_DIR = ROOT / 'out'
 
@@ -166,155 +173,162 @@ def plot_industry_chart(industry_name, df_metrics):
     return fig
 
 
-if market is None:
-    st.error("找不到資料檔案。請先生成資料。")
-    if st.button("生成資料"):
-        st.info("正在執行生成腳本...")
-        from scripts import generate_ssot_data
-        generate_ssot_data.main()
-        st.success("資料已生成！請重新整理頁面。")
-        st.experimental_rerun()
-else:
-    # Sidebar
-    st.sidebar.header("設定")
-    exclude_finance = st.sidebar.checkbox("排除金融保險業", value=True)
-    
-    st.sidebar.markdown("### 資料更新管理")
-    admin_password = st.sidebar.text_input("輸入管理員密碼解鎖更新功能", type="password")
-    
-    # Get password from secrets or default to 'admin' for local testing if not set
-    # In Cloud, user MUST set ADMIN_PASSWORD in secrets
-    try:
-        correct_password = st.secrets["ADMIN_PASSWORD"]
-    except (FileNotFoundError, KeyError, AttributeError):
-        correct_password = "admin" # Fallback for local dev
+# TABS
+tab1, tab2 = st.tabs(["市場總覽", "營收廣度"])
+
+with tab1:
+    if market is None:
+        st.error("找不到資料檔案。請先生成資料。")
+        if st.button("生成資料"):
+            st.info("正在執行生成腳本...")
+            from scripts import generate_ssot_data
+            generate_ssot_data.main()
+            st.success("資料已生成！請重新整理頁面。")
+            st.experimental_rerun()
+    else:
+        # Sidebar
+        st.sidebar.header("設定")
+        exclude_finance = st.sidebar.checkbox("排除金融保險業", value=True)
         
-    if admin_password == correct_password:
-        if st.sidebar.button("更新資料"):
-            with st.spinner("正在更新資料，請稍候..."):
-                from scripts import generate_ssot_data
-                generate_ssot_data.main()
-                st.cache_data.clear()
-                st.success("資料已更新！")
-                # Compatible rerun
-                if hasattr(st, 'rerun'):
-                    st.rerun()
-                else:
-                    st.experimental_rerun()
-    elif admin_password:
-        st.sidebar.error("密碼錯誤")
-    else:
-        st.sidebar.info("請輸入密碼以啟用更新按鈕")
-    
-    if exclude_finance:
-        df_market = market_ex
-        title_suffix = "(排除金融)"
-    else:
-        df_market = market
-        title_suffix = "(全市場)"
-
-    # Initialize session state for selected industry
-    if 'selected_industry' not in st.session_state:
-        st.session_state.selected_industry = None
-
-    def set_industry(ind):
-        st.session_state.selected_industry = ind
-
-    # Sidebar Industry Details
-    st.sidebar.divider()
-    st.sidebar.subheader("產業詳情")
-    
-    selected_ind = st.session_state.selected_industry
-    
-    if selected_ind:
-        st.sidebar.markdown(f"### {selected_ind}")
-        st.sidebar.markdown("*(已選取)*")
-        if stock_details is not None:
-             # Filter details
-            ind_stocks = stock_details[stock_details['industry'] == selected_ind].copy()
-            # Sort by YTD YoY desc
-            ind_stocks = ind_stocks.sort_values('ytd_yoy', ascending=False)
+        st.sidebar.markdown("### 資料更新管理")
+        admin_password = st.sidebar.text_input("輸入管理員密碼解鎖更新功能", type="password")
+        
+        # Get password from secrets or default to 'admin' for local testing if not set
+        # In Cloud, user MUST set ADMIN_PASSWORD in secrets
+        try:
+            correct_password = st.secrets["ADMIN_PASSWORD"]
+        except (FileNotFoundError, KeyError, AttributeError):
+            correct_password = "admin" # Fallback for local dev
             
-            for idx, row in ind_stocks.iterrows():
-                code = row['code']
-                name = row['name']
-                price = row['close_price']
-                ytd = row['ytd_yoy']
-                s3 = row['3m_smooth']
-                s6 = row['6m_smooth']
-                
-                with st.sidebar.expander(f"{code} {name} (${price:,.1f})"):
-                    st.write(f"**YTD YoY %**: {ytd:+.2f}%")
-                    st.write(f"**3M Smooth**: {s3:+.2f}%")
-                    st.write(f"**6M Smooth**: {s6:+.2f}%")
-                    st.markdown("---")
-    else:
-        st.sidebar.info("請在右側圖表上方點選產業名稱以查看成分股詳情。")
-
-    # Main Dashboard Metrics
-    latest_date = df_market.index[-1]
-    last_yoy = df_market.loc[latest_date, 'yoy_pct']
-    last_revenue = df_market.loc[latest_date, 'total_revenue']
-    
-    st.header(f"市場總覽 {title_suffix}")
-    st.write(f"資料截止日期: {latest_date.strftime('%Y-%m-%d')}")
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("當月總營收", f"{last_revenue:,.0f}")
-    m2.metric("當月年增率 (YoY)", f"{last_yoy:.2f}%", delta_color="normal")
-    
-    st.divider()
-
-    # Config for plotly chart to enable scroll zoom
-    plotly_config = {'scrollZoom': True}
-
-    # Market Charts
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(plot_market_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
-    with c2:
-        st.plotly_chart(plot_market_index_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
-
-    c3, c4 = st.columns(2)
-    with c3:
-        st.plotly_chart(plot_market_ma_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
-    with c4:
-        st.plotly_chart(plot_ytd_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+        if admin_password == correct_password:
+            if st.sidebar.button("更新資料"):
+                with st.spinner("正在更新資料，請稍候..."):
+                    from scripts import generate_ssot_data
+                    generate_ssot_data.main()
+                    st.cache_data.clear()
+                    st.success("資料已更新！")
+                    # Compatible rerun
+                    if hasattr(st, 'rerun'):
+                        st.rerun()
+                    else:
+                        st.experimental_rerun()
+        elif admin_password:
+            st.sidebar.error("密碼錯誤")
+        else:
+            st.sidebar.info("請輸入密碼以啟用更新按鈕")
         
-    st.divider()
-    
-    st.header("產業趨勢細項 (YTD YoY)")
-    st.caption("💡 點選下方產業名稱按鈕，即可在左側選單查看該產業成分股詳情")
-    
-    # Calculate metrics for all industries
-    ind_metrics_map = calculate_industry_metrics(industry_rev)
-    
-    # Identify all industries
-    all_industries = []
-    if industry_rev is not None:
-        all_industries = list(industry_rev.columns)
         if exclude_finance:
-             all_industries = [ind for ind in all_industries if "金融" not in ind and "保險" not in ind]
-    
-    if industry_rev is not None:
-         # Sort by latest revenue size
-        latest_rev_row = industry_rev.iloc[-1]
-        sorted_industries = sorted(all_industries, key=lambda x: latest_rev_row.get(x, 0), reverse=True)
-        
-        cols = st.columns(2)
-        for i, ind in enumerate(sorted_industries):
-            with cols[i % 2]:
-                # Use button as header/selector
-                # Use a unique key for each button
-                st.button(f"📊 {ind}", key=f"btn_{ind}", on_click=set_industry, args=(ind,), use_container_width=True)
-                
-                # Plot chart without title (since button is the title)
-                fig = plot_industry_chart(ind, ind_metrics_map[ind])
-                fig.update_layout(title_text="", margin=dict(t=10)) # Remove title, reduce top margin
-                st.plotly_chart(fig, use_container_width=True, config=plotly_config)
+            df_market = market_ex
+            title_suffix = "(排除金融)"
+        else:
+            df_market = market
+            title_suffix = "(全市場)"
 
-    with st.expander("檢視原始資料"):
-        st.subheader("市場資料")
-        st.dataframe(df_market.sort_index(ascending=False))
-        st.subheader("產業營收資料")
-        st.dataframe(industry_rev.sort_index(ascending=False))
+        # Initialize session state for selected industry
+        if 'selected_industry' not in st.session_state:
+            st.session_state.selected_industry = None
+
+        def set_industry(ind):
+            st.session_state.selected_industry = ind
+
+        # Sidebar Industry Details
+        st.sidebar.divider()
+        st.sidebar.subheader("產業詳情")
+        
+        selected_ind = st.session_state.selected_industry
+        
+        if selected_ind:
+            st.sidebar.markdown(f"### {selected_ind}")
+            st.sidebar.markdown("*(已選取)*")
+            if stock_details is not None:
+                 # Filter details
+                ind_stocks = stock_details[stock_details['industry'] == selected_ind].copy()
+                # Sort by YTD YoY desc
+                ind_stocks = ind_stocks.sort_values('ytd_yoy', ascending=False)
+                
+                for idx, row in ind_stocks.iterrows():
+                    code = row['code']
+                    name = row['name']
+                    price = row['close_price']
+                    ytd = row['ytd_yoy']
+                    s3 = row['3m_smooth']
+                    s6 = row['6m_smooth']
+                    
+                    with st.sidebar.expander(f"{code} {name} (${price:,.1f})"):
+                        st.write(f"**YTD YoY %**: {ytd:+.2f}%")
+                        st.write(f"**3M Smooth**: {s3:+.2f}%")
+                        st.write(f"**6M Smooth**: {s6:+.2f}%")
+                        st.markdown("---")
+        else:
+            st.sidebar.info("請在右側圖表上方點選產業名稱以查看成分股詳情。")
+
+        # Main Dashboard Metrics
+        latest_date = df_market.index[-1]
+        last_yoy = df_market.loc[latest_date, 'yoy_pct']
+        last_revenue = df_market.loc[latest_date, 'total_revenue']
+        
+        st.header(f"市場總覽 {title_suffix}")
+        st.write(f"資料截止日期: {latest_date.strftime('%Y-%m-%d')}")
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("當月總營收", f"{last_revenue:,.0f}")
+        m2.metric("當月年增率 (YoY)", f"{last_yoy:.2f}%", delta_color="normal")
+        
+        st.divider()
+
+        # Config for plotly chart to enable scroll zoom
+        plotly_config = {'scrollZoom': True}
+
+        # Market Charts
+        c1, c2 = st.columns(2)
+        with c1:
+            st.plotly_chart(plot_market_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+        with c2:
+            st.plotly_chart(plot_market_index_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+
+        c3, c4 = st.columns(2)
+        with c3:
+            st.plotly_chart(plot_market_ma_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+        with c4:
+            st.plotly_chart(plot_ytd_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+            
+        st.divider()
+        
+        st.header("產業趨勢細項 (YTD YoY)")
+        st.caption("💡 點選下方產業名稱按鈕，即可在左側選單查看該產業成分股詳情")
+        
+        # Calculate metrics for all industries
+        ind_metrics_map = calculate_industry_metrics(industry_rev)
+        
+        # Identify all industries
+        all_industries = []
+        if industry_rev is not None:
+            all_industries = list(industry_rev.columns)
+            if exclude_finance:
+                 all_industries = [ind for ind in all_industries if "金融" not in ind and "保險" not in ind]
+        
+        if industry_rev is not None:
+             # Sort by latest revenue size
+            latest_rev_row = industry_rev.iloc[-1]
+            sorted_industries = sorted(all_industries, key=lambda x: latest_rev_row.get(x, 0), reverse=True)
+            
+            cols = st.columns(2)
+            for i, ind in enumerate(sorted_industries):
+                with cols[i % 2]:
+                    # Use button as header/selector
+                    # Use a unique key for each button
+                    st.button(f"📊 {ind}", key=f"btn_{ind}", on_click=set_industry, args=(ind,), use_container_width=True)
+                    
+                    # Plot chart without title (since button is the title)
+                    fig = plot_industry_chart(ind, ind_metrics_map[ind])
+                    fig.update_layout(title_text="", margin=dict(t=10)) # Remove title, reduce top margin
+                    st.plotly_chart(fig, use_container_width=True, config=plotly_config)
+
+        with st.expander("檢視原始資料"):
+            st.subheader("市場資料")
+            st.dataframe(df_market.sort_index(ascending=False))
+            st.subheader("產業營收資料")
+            st.dataframe(industry_rev.sort_index(ascending=False))
+
+with tab2:
+    render_breadth_tab()

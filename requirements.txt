@@ -2,3 +2,4 @@ streamlit
 pandas
 finlab
 plotly
+yfinance
