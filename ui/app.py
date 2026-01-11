@@ -35,12 +35,18 @@ def get_data():
             stock_details = pd.read_csv(OUTPUT_DIR / 'stock_details.csv')
         except FileNotFoundError:
             stock_details = None
-            
-        return market, market_ex, industry_rev, stock_details
-    except FileNotFoundError:
-        return None, None, None, None
 
-market, market_ex, industry_rev, stock_details = get_data()
+        # Load industry counts for diagnosis
+        try:
+            industry_counts = pd.read_csv(OUTPUT_DIR / 'industry_counts.csv', index_col='date', parse_dates=True)
+        except FileNotFoundError:
+            industry_counts = None
+            
+        return market, market_ex, industry_rev, stock_details, industry_counts
+    except FileNotFoundError:
+        return None, None, None, None, None
+
+market, market_ex, industry_rev, stock_details, industry_counts = get_data()
 
 # Filter data to start from 2020 for display
 START_DATE = '2020-01-01'
@@ -50,6 +56,8 @@ if market_ex is not None:
     market_ex = market_ex[market_ex.index >= START_DATE]
 if industry_rev is not None:
     industry_rev = industry_rev[industry_rev.index >= START_DATE]
+if industry_counts is not None:
+    industry_counts = industry_counts[industry_counts.index >= START_DATE]
 
 def calculate_industry_metrics(df_rev):
     """
@@ -83,7 +91,7 @@ def calculate_industry_metrics(df_rev):
         
     return metrics
 
-def plot_market_yoy_plotly(df, title_suffix=""):
+def plot_market_yoy_plotly(df, title_suffix="", total_counts=None, show_counts=False):
     fig = go.Figure()
     if 'yoy_pct' in df.columns:
         fig.add_trace(go.Bar(x=df.index, y=df['yoy_pct'], name='年增率 (YoY %)', marker_color='skyblue', opacity=0.6))
@@ -91,7 +99,30 @@ def plot_market_yoy_plotly(df, title_suffix=""):
         # Changed color to Crimson for contrast
         fig.add_trace(go.Scatter(x=df.index, y=df['yoy_pct_smooth_3m'], name='3個月平滑年增率', line=dict(color='crimson', width=2)))
     
-    fig.update_layout(title=f'市場營收年增率 {title_suffix}', yaxis_title='年增率 (%)', xaxis_title='日期', hovermode="x unified", dragmode="pan")
+    # Optional: Total Company Counts on Secondary Axis
+    if show_counts and total_counts is not None:
+        fig.add_trace(go.Scatter(
+            x=total_counts.index,
+            y=total_counts,
+            name='總樣本數 (家)',
+            line=dict(color='white', width=1, dash='dot'),
+            yaxis='y2',
+            opacity=0.7
+        ))
+
+    fig.update_layout(
+        title=f'市場營收年增率 {title_suffix}', 
+        yaxis_title='年增率 (%)', 
+        xaxis_title='日期', 
+        hovermode="x unified", 
+        dragmode="pan",
+        yaxis2=dict(
+            title='家數',
+            overlaying='y',
+            side='right',
+            showgrid=False
+        )
+    )
     return fig
 
 def plot_market_index_plotly(df, title_suffix=""):
@@ -112,7 +143,7 @@ def plot_market_ma_plotly(df, title_suffix=""):
     fig.update_layout(title=f'市場營收與移動平均 {title_suffix}', yaxis_title='營收', xaxis_title='日期', hovermode="x unified", dragmode="pan")
     return fig
 
-def plot_ytd_yoy_plotly(df, title_suffix=""):
+def plot_ytd_yoy_plotly(df, title_suffix="", total_counts=None, show_counts=False):
     fig = go.Figure()
     if 'ytd_yoy_pct' in df.columns:
         fig.add_trace(go.Bar(x=df.index, y=df['ytd_yoy_pct'], name='YTD 年增率 %', marker_color='lightgreen', opacity=0.4))
@@ -123,10 +154,33 @@ def plot_ytd_yoy_plotly(df, title_suffix=""):
         # Changed to Crimson for contrast (used to be olive)
         fig.add_trace(go.Scatter(x=df.index, y=df['ytd_yoy_pct_avg_6m'], name='6個月平滑', line=dict(color='crimson', width=2, dash='dash')))
 
-    fig.update_layout(title=f'年初至今 (YTD) 市場營收年增率 {title_suffix}', yaxis_title='成長率 (%)', xaxis_title='日期', hovermode="x unified", dragmode="pan")
+    # Optional: Total Company Counts on Secondary Axis
+    if show_counts and total_counts is not None:
+        fig.add_trace(go.Scatter(
+            x=total_counts.index,
+            y=total_counts,
+            name='總樣本數 (家)',
+            line=dict(color='white', width=1, dash='dot'),
+            yaxis='y2',
+            opacity=0.7
+        ))
+
+    fig.update_layout(
+        title=f'年初至今 (YTD) 市場營收年增率 {title_suffix}', 
+        yaxis_title='成長率 (%)', 
+        xaxis_title='日期', 
+        hovermode="x unified", 
+        dragmode="pan",
+        yaxis2=dict(
+            title='家數',
+            overlaying='y',
+            side='right',
+            showgrid=False
+        )
+    )
     return fig
 
-def plot_industry_chart(industry_name, df_metrics):
+def plot_industry_chart(industry_name, df_metrics, df_counts=None, show_counts=False):
     fig = go.Figure()
     
     # YTD YoY Bar
@@ -153,6 +207,17 @@ def plot_industry_chart(industry_name, df_metrics):
         name='6M Smooth', 
         line=dict(color='crimson', width=2, dash='dash')
     ))
+
+    # Optional: Company Counts on Secondary Axis
+    if show_counts and df_counts is not None and industry_name in df_counts.columns:
+        fig.add_trace(go.Scatter(
+            x=df_counts.index,
+            y=df_counts[industry_name],
+            name='樣本數 (家)',
+            line=dict(color='white', width=1, dash='dot'),
+            yaxis='y2',
+            opacity=0.7
+        ))
     
     fig.update_layout(
         title=f'{industry_name}',
@@ -168,7 +233,13 @@ def plot_industry_chart(industry_name, df_metrics):
             x=1
         ),
         margin=dict(l=20, r=20, t=40, b=20),
-        height=350
+        height=350,
+        yaxis2=dict(
+            title='家數',
+            overlaying='y',
+            side='right',
+            showgrid=False
+        )
     )
     return fig
 
@@ -189,6 +260,7 @@ with tab1:
         # Sidebar
         st.sidebar.header("設定")
         exclude_finance = st.sidebar.checkbox("排除金融保險業", value=True)
+        show_sample_counts = st.sidebar.checkbox("顯示樣本數 (家數)", value=False, help="在產業圖表上疊加顯示該產業當月的公司家數，用於診斷數據是否受新掛牌公司影響。")
         
         st.sidebar.markdown("### 資料更新管理")
         admin_password = st.sidebar.text_input("輸入管理員密碼解鎖更新功能", type="password")
@@ -220,9 +292,20 @@ with tab1:
         if exclude_finance:
             df_market = market_ex
             title_suffix = "(排除金融)"
+            target_inds = [c for c in industry_rev.columns if "金融" not in c and "保險" not in c] if industry_rev is not None else []
         else:
             df_market = market
             title_suffix = "(全市場)"
+            target_inds = list(industry_rev.columns) if industry_rev is not None else []
+
+        # Calculate Total Counts for the selected scope
+        total_market_counts = None
+        if industry_counts is not None:
+             valid_inds = [c for c in target_inds if c in industry_counts.columns]
+             if valid_inds:
+                 total_market_counts = industry_counts[valid_inds].sum(axis=1)
+                 # Align date filter
+                 total_market_counts = total_market_counts[total_market_counts.index >= START_DATE]
 
         # Initialize session state for selected industry
         if 'selected_industry' not in st.session_state:
@@ -282,7 +365,7 @@ with tab1:
         # Market Charts
         c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(plot_market_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+            st.plotly_chart(plot_market_yoy_plotly(df_market, title_suffix, total_market_counts, show_sample_counts), use_container_width=True, config=plotly_config)
         with c2:
             st.plotly_chart(plot_market_index_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
 
@@ -290,7 +373,7 @@ with tab1:
         with c3:
             st.plotly_chart(plot_market_ma_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
         with c4:
-            st.plotly_chart(plot_ytd_yoy_plotly(df_market, title_suffix), use_container_width=True, config=plotly_config)
+            st.plotly_chart(plot_ytd_yoy_plotly(df_market, title_suffix, total_market_counts, show_sample_counts), use_container_width=True, config=plotly_config)
             
         st.divider()
         
@@ -320,7 +403,7 @@ with tab1:
                     st.button(f"📊 {ind}", key=f"btn_{ind}", on_click=set_industry, args=(ind,), use_container_width=True)
                     
                     # Plot chart without title (since button is the title)
-                    fig = plot_industry_chart(ind, ind_metrics_map[ind])
+                    fig = plot_industry_chart(ind, ind_metrics_map[ind], df_counts=industry_counts, show_counts=show_sample_counts)
                     fig.update_layout(title_text="", margin=dict(t=10)) # Remove title, reduce top margin
                     st.plotly_chart(fig, use_container_width=True, config=plotly_config)
 
