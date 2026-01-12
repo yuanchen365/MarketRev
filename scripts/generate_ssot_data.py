@@ -103,6 +103,13 @@ def main():
     ind_pivot.to_csv('out/industry_revenue.csv')
     print("Saved out/industry_revenue.csv (All Industries)")
 
+    # 7.1 Calculate Industry Counts (SSOT for diagnosis & UI)
+    print("Calculating Industry Company Counts...")
+    ind_counts = rev_long.groupby(['industry', 'date'])['code'].count().reset_index()
+    ind_counts_pivot = ind_counts.pivot(index='date', columns='industry', values='code')
+    ind_counts_pivot.to_csv('out/industry_counts.csv')
+    print("Saved out/industry_counts.csv")
+
     # Legacy: Top 12 YoY (Optional, kept for reference or other tools)
     ind_yoy = ind_pivot.pct_change(12) * 100
     

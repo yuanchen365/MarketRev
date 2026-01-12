@@ -2,3 +2,14 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 finlabapi.txt
+
+# Output directory
+out/
+
+# Local data
+check_counts.py
+check_index_alignment.py
+check_revenue_gap.py
+scripts/check_industry_drops.py
+scripts/debug_sample_gap.py
+scripts/segment.csv
